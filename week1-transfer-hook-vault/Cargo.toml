@@ -2,7 +2,12 @@
 members = [
     "programs/*"
 ]
+exclude = ["program-tests"]
 resolver = "2"
+
+[workspace.dependencies]
+constant_time_eq = "=0.3.1"
+solana-account-info = "~2.3"
 
 [profile.release]
 overflow-checks = true

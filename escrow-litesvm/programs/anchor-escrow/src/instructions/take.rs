@@ -2,6 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::{associated_token::AssociatedToken, token_interface::{Mint, TokenAccount, TokenInterface, TransferChecked, transfer_checked, CloseAccount, close_account}};
 
 use crate::state::Escrow;
+use crate::EscrowError;
 
 //Create context
 #[derive(Accounts)]
@@ -57,6 +58,16 @@ pub struct Take<'info> {
 //Transfer tokens from vault to taker
 //Close vault account
 impl<'info> Take<'info> {
+    pub fn check_time_lock(&self) -> Result<()> {
+        let clock = Clock::get()?;
+        let five_days: i64 = 5 * 24 * 60 * 60;
+        require!(
+            clock.unix_timestamp >= self.escrow.created_at + five_days,
+            EscrowError::TimeLockNotExpired
+        );
+        Ok(())
+    }
+
     pub fn deposit(&mut self) -> Result<()> {
         let cpi_program = self.token_program.to_account_info();
 

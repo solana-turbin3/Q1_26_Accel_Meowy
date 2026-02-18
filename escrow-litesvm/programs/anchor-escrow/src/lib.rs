@@ -25,7 +25,14 @@ pub mod anchor_escrow {
     }
 
     pub fn take(ctx: Context<Take>) -> Result<()> {
+        ctx.accounts.check_time_lock()?;
         ctx.accounts.deposit()?;
         ctx.accounts.withdraw_and_close_vault()
     }
+}
+
+#[error_code]
+pub enum EscrowError {
+    #[msg("The escrow time lock has not expired. Take can only happen 5 days after make.")]
+    TimeLockNotExpired,
 }
