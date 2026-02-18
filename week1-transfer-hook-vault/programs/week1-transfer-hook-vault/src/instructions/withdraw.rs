@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token_interface::{self, Mint, TokenAccount, TokenInterface, Transfer};
+use anchor_spl::token_interface::{self, Mint, TokenAccount, TokenInterface, Burn, MintTo};
 
 use crate::state::VaultConfig;
 use crate::errors::VaultError;
@@ -18,6 +18,7 @@ pub struct Withdraw<'info> {
     )]
     pub vault_config: Account<'info, VaultConfig>,
 
+    #[account(mut)]
     pub mint: InterfaceAccount<'info, Mint>,
 
     #[account(
@@ -47,20 +48,31 @@ impl<'info> Withdraw<'info> {
             &[self.vault_config.config_bump],
         ]];
 
-        // Use plain transfer to avoid reentrancy (our program is the transfer hook)
-        let cpi_accounts = Transfer {
+        // Burn tokens from vault (vault_config PDA is authority)
+        let burn_accounts = Burn {
+            mint: self.mint.to_account_info(),
             from: self.vault.to_account_info(),
+            authority: self.vault_config.to_account_info(),
+        };
+        let burn_ctx = CpiContext::new_with_signer(
+            self.token_program.to_account_info(),
+            burn_accounts,
+            signer_seeds,
+        );
+        token_interface::burn(burn_ctx, amount)?;
+
+        // Mint equivalent tokens to user
+        let mint_accounts = MintTo {
+            mint: self.mint.to_account_info(),
             to: self.user_token_account.to_account_info(),
             authority: self.vault_config.to_account_info(),
         };
-
-        let cpi_ctx = CpiContext::new_with_signer(
+        let mint_ctx = CpiContext::new_with_signer(
             self.token_program.to_account_info(),
-            cpi_accounts,
+            mint_accounts,
             signer_seeds,
         );
-
-        token_interface::transfer(cpi_ctx, amount)?;
+        token_interface::mint_to(mint_ctx, amount)?;
 
         msg!("Withdrew {} tokens from vault", amount);
         Ok(())

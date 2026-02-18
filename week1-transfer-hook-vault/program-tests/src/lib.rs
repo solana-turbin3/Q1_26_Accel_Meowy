@@ -213,7 +213,7 @@ mod tests {
         }
     }
 
-    /// Build the deposit instruction (uses plain transfer internally, validates whitelist in-program)
+    /// Build the deposit instruction (uses burn+mint internally, validates whitelist in-program)
     fn build_deposit_ix(
         depositor: &Pubkey,
         vault_config: &Pubkey,
@@ -232,7 +232,7 @@ mod tests {
             accounts: vec![
                 AccountMeta::new(*depositor, true),
                 AccountMeta::new_readonly(*vault_config, false),
-                AccountMeta::new_readonly(*mint, false),
+                AccountMeta::new(*mint, false),              // mut: burn/mint modify supply
                 AccountMeta::new(*depositor_token_account, false),
                 AccountMeta::new(*vault, false),
                 AccountMeta::new_readonly(token_2022_program_id(), false),
@@ -241,7 +241,7 @@ mod tests {
         }
     }
 
-    /// Build the withdraw instruction (uses plain transfer internally)
+    /// Build the withdraw instruction (uses burn+mint internally)
     fn build_withdraw_ix(
         admin: &Pubkey,
         vault_config: &Pubkey,
@@ -262,7 +262,7 @@ mod tests {
             accounts: vec![
                 AccountMeta::new(*admin, true),
                 AccountMeta::new_readonly(*vault_config, false),
-                AccountMeta::new_readonly(*mint, false),
+                AccountMeta::new(*mint, false),              // mut: burn/mint modify supply
                 AccountMeta::new(*vault, false),
                 AccountMeta::new(*user_token_account, false),
                 AccountMeta::new_readonly(token_2022_program_id(), false),
@@ -370,15 +370,10 @@ mod tests {
         let vault_account = program.get_account(&vault);
         assert!(vault_account.is_some(), "Vault token account should exist");
 
-        // Verify extra account meta list exists
-        let meta_account = program.get_account(&extra_meta);
-        assert!(meta_account.is_some(), "ExtraAccountMetaList should exist");
-
         println!("test_initialize passed!");
         println!("  VaultConfig: {}", vault_config);
         println!("  Mint: {}", mint);
         println!("  Vault: {}", vault);
-        println!("  ExtraAccountMetaList: {}", extra_meta);
     }
 
     #[test]

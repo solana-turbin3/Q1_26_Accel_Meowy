@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token_interface::{self, Mint, TokenAccount, TokenInterface, Transfer};
+use anchor_spl::token_interface::{self, Mint, TokenAccount, TokenInterface, Burn, MintTo};
 
 use crate::state::VaultConfig;
 use crate::errors::VaultError;
@@ -16,6 +16,7 @@ pub struct Deposit<'info> {
     )]
     pub vault_config: Account<'info, VaultConfig>,
 
+    #[account(mut)]
     pub mint: InterfaceAccount<'info, Mint>,
 
     #[account(
@@ -41,7 +42,7 @@ pub struct Deposit<'info> {
 
 impl<'info> Deposit<'info> {
     pub fn deposit(&mut self, amount: u64) -> Result<()> {
-        // Validate whitelist internally (avoids reentrancy from transfer hook CPI)
+        // Validate whitelist internally
         let depositor_key = self.depositor.key();
         let entry = self.vault_config.whitelist.iter()
             .find(|e| e.address == depositor_key)
@@ -52,20 +53,35 @@ impl<'info> Deposit<'info> {
             VaultError::AmountExceedsLimit
         );
 
-        // Use plain transfer (not transfer_checked) to avoid reentrancy
-        // since our program is also the transfer hook program
-        let cpi_accounts = Transfer {
+        // Burn tokens from depositor (avoids transfer_checked reentrancy)
+        let burn_accounts = Burn {
+            mint: self.mint.to_account_info(),
             from: self.depositor_token_account.to_account_info(),
-            to: self.vault.to_account_info(),
             authority: self.depositor.to_account_info(),
         };
-
-        let cpi_ctx = CpiContext::new(
+        let burn_ctx = CpiContext::new(
             self.token_program.to_account_info(),
-            cpi_accounts,
+            burn_accounts,
         );
+        token_interface::burn(burn_ctx, amount)?;
 
-        token_interface::transfer(cpi_ctx, amount)?;
+        // Mint equivalent tokens to vault (vault_config PDA is mint authority)
+        let signer_seeds: &[&[&[u8]]] = &[&[
+            b"vault_config",
+            &[self.vault_config.config_bump],
+        ]];
+
+        let mint_accounts = MintTo {
+            mint: self.mint.to_account_info(),
+            to: self.vault.to_account_info(),
+            authority: self.vault_config.to_account_info(),
+        };
+        let mint_ctx = CpiContext::new_with_signer(
+            self.token_program.to_account_info(),
+            mint_accounts,
+            signer_seeds,
+        );
+        token_interface::mint_to(mint_ctx, amount)?;
 
         msg!("Deposited {} tokens into vault", amount);
         Ok(())
