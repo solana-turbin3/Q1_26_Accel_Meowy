@@ -49,7 +49,33 @@ pub mod er_state_account {
 
     pub fn close(ctx: Context<CloseUser>) -> Result<()> {
         ctx.accounts.close()?;
-        
+
+        Ok(())
+    }
+
+    // Task 1: VRF on base layer (outside ER)
+    pub fn request_vrf(ctx: Context<RequestVrf>, client_seed: u8) -> Result<()> {
+        ctx.accounts.request_vrf(client_seed)?;
+
+        Ok(())
+    }
+
+    pub fn callback_vrf(ctx: Context<CallbackVrf>, randomness: [u8; 32]) -> Result<()> {
+        ctx.accounts.callback_vrf(randomness)?;
+
+        Ok(())
+    }
+
+    // Task 2: VRF inside Ephemeral Rollup
+    pub fn request_vrf_er(ctx: Context<RequestVrfEr>, client_seed: u8) -> Result<()> {
+        ctx.accounts.request_vrf_er(client_seed)?;
+
+        Ok(())
+    }
+
+    pub fn callback_vrf_er(ctx: Context<CallbackVrfEr>, randomness: [u8; 32]) -> Result<()> {
+        ctx.accounts.callback_vrf_er(randomness)?;
+
         Ok(())
     }
 }

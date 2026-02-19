@@ -573,4 +573,248 @@ mod tests {
         msg!("All time-lock assertions passed!");
     }
 
+    #[test]
+    fn test_auto_refund_success() {
+        // Test that auto_refund works without maker signature (permissionless)
+        let (mut program, payer) = setup();
+        let maker = payer.pubkey();
+
+        // Create mints
+        let mint_a = CreateMint::new(&mut program, &payer)
+            .decimals(6)
+            .authority(&maker)
+            .send()
+            .unwrap();
+
+        let mint_b = CreateMint::new(&mut program, &payer)
+            .decimals(6)
+            .authority(&maker)
+            .send()
+            .unwrap();
+
+        // Create maker's ATA for Mint A and fund it
+        let maker_ata_a = CreateAssociatedTokenAccount::new(&mut program, &payer, &mint_a)
+            .owner(&maker).send().unwrap();
+
+        MintTo::new(&mut program, &payer, &mint_a, &maker_ata_a, 1_000_000_000)
+            .send()
+            .unwrap();
+
+        let initial_balance = 1_000_000_000u64;
+
+        // Derive escrow PDA and vault
+        let seed: u64 = 999;
+        let escrow = Pubkey::find_program_address(
+            &[b"escrow", maker.as_ref(), &seed.to_le_bytes()],
+            &PROGRAM_ID
+        ).0;
+
+        let vault = associated_token::get_associated_token_address(&escrow, &mint_a);
+        let token_program = TOKEN_PROGRAM_ID;
+        let system_program = SYSTEM_PROGRAM_ID;
+        let associated_token_program = spl_associated_token_account::ID;
+
+        // Execute Make instruction (deposit 50 tokens)
+        let make_ix = Instruction {
+            program_id: PROGRAM_ID,
+            accounts: crate::accounts::Make {
+                maker,
+                mint_a,
+                mint_b,
+                maker_ata_a,
+                escrow,
+                vault,
+                associated_token_program,
+                token_program,
+                system_program,
+            }.to_account_metas(None),
+            data: crate::instruction::Make { deposit: 50, seed, receive: 25 }.data(),
+        };
+
+        let message = Message::new(&[make_ix], Some(&payer.pubkey()));
+        let transaction = Transaction::new(&[&payer], message, program.latest_blockhash());
+        program.send_transaction(transaction).unwrap();
+
+        msg!("Make transaction successful");
+
+        // Verify vault has tokens
+        let vault_account = program.get_account(&vault).unwrap();
+        let vault_data = spl_token::state::Account::unpack(&vault_account.data).unwrap();
+        assert_eq!(vault_data.amount, 50);
+
+        // Create a cranker keypair (NOT the maker) to prove auto_refund is permissionless
+        let cranker = Keypair::new();
+        program.airdrop(&cranker.pubkey(), 1 * LAMPORTS_PER_SOL).unwrap();
+
+        // Execute AutoRefund — cranker signs, NOT the maker
+        let auto_refund_ix = Instruction {
+            program_id: PROGRAM_ID,
+            accounts: crate::accounts::AutoRefund {
+                maker,
+                mint_a,
+                maker_ata_a,
+                escrow,
+                vault,
+                token_program,
+                system_program,
+            }.to_account_metas(None),
+            data: crate::instruction::AutoRefund { seed }.data(),
+        };
+
+        let message = Message::new(&[auto_refund_ix], Some(&cranker.pubkey()));
+        let transaction = Transaction::new(&[&cranker], message, program.latest_blockhash());
+        let tx = program.send_transaction(transaction).unwrap();
+
+        msg!("\n\nAutoRefund transaction successful");
+        msg!("CUs Consumed: {}", tx.compute_units_consumed);
+
+        // Verify: maker received tokens back
+        let maker_ata_a_account = program.get_account(&maker_ata_a).unwrap();
+        let maker_ata_a_data = spl_token::state::Account::unpack(&maker_ata_a_account.data).unwrap();
+        assert_eq!(maker_ata_a_data.amount, initial_balance);
+
+        // Verify: vault closed
+        let vault_after = program.get_account(&vault);
+        assert!(vault_after.is_none() || vault_after.unwrap().lamports == 0);
+
+        // Verify: escrow closed
+        let escrow_after = program.get_account(&escrow);
+        assert!(escrow_after.is_none() || escrow_after.unwrap().lamports == 0);
+
+        msg!("All AutoRefund assertions passed!");
+    }
+
+    #[test]
+    fn test_auto_refund_already_taken_noop() {
+        // Test that auto_refund gracefully handles already-closed escrow (no-op)
+        let (mut program, payer) = setup();
+        let maker = payer.pubkey();
+
+        let taker_kp = Keypair::new();
+        program.airdrop(&taker_kp.pubkey(), 10 * LAMPORTS_PER_SOL).unwrap();
+        let taker = taker_kp.pubkey();
+
+        let mint_a = CreateMint::new(&mut program, &payer)
+            .decimals(6)
+            .authority(&maker)
+            .send()
+            .unwrap();
+
+        let mint_b = CreateMint::new(&mut program, &taker_kp)
+            .decimals(6)
+            .authority(&taker)
+            .send()
+            .unwrap();
+
+        let maker_ata_a = CreateAssociatedTokenAccount::new(&mut program, &payer, &mint_a)
+            .owner(&maker).send().unwrap();
+
+        MintTo::new(&mut program, &payer, &mint_a, &maker_ata_a, 1_000_000_000)
+            .send()
+            .unwrap();
+
+        let taker_ata_b = CreateAssociatedTokenAccount::new(&mut program, &taker_kp, &mint_b)
+            .owner(&taker).send().unwrap();
+
+        MintTo::new(&mut program, &taker_kp, &mint_b, &taker_ata_b, 1_000_000_000)
+            .send()
+            .unwrap();
+
+        let seed: u64 = 888;
+        let escrow = Pubkey::find_program_address(
+            &[b"escrow", maker.as_ref(), &seed.to_le_bytes()],
+            &PROGRAM_ID
+        ).0;
+
+        let vault = associated_token::get_associated_token_address(&escrow, &mint_a);
+        let token_program = TOKEN_PROGRAM_ID;
+        let system_program = SYSTEM_PROGRAM_ID;
+        let associated_token_program = spl_associated_token_account::ID;
+
+        // Make
+        let make_ix = Instruction {
+            program_id: PROGRAM_ID,
+            accounts: crate::accounts::Make {
+                maker,
+                mint_a,
+                mint_b,
+                maker_ata_a,
+                escrow,
+                vault,
+                associated_token_program,
+                token_program,
+                system_program,
+            }.to_account_metas(None),
+            data: crate::instruction::Make { deposit: 10, seed, receive: 10 }.data(),
+        };
+
+        let message = Message::new(&[make_ix], Some(&payer.pubkey()));
+        let transaction = Transaction::new(&[&payer], message, program.latest_blockhash());
+        program.send_transaction(transaction).unwrap();
+
+        // Advance clock past 5-day time-lock
+        let mut clock: Clock = program.get_sysvar();
+        let five_days: i64 = 5 * 24 * 60 * 60;
+        clock.unix_timestamp += five_days + 1;
+        program.set_sysvar(&clock);
+
+        // Take (taker fulfills the escrow)
+        let taker_ata_a = associated_token::get_associated_token_address(&taker, &mint_a);
+        let maker_ata_b = associated_token::get_associated_token_address(&maker, &mint_b);
+
+        let take_ix = Instruction {
+            program_id: PROGRAM_ID,
+            accounts: crate::accounts::Take {
+                taker,
+                maker,
+                mint_a,
+                mint_b,
+                taker_ata_a,
+                taker_ata_b,
+                maker_ata_b,
+                escrow,
+                vault,
+                associated_token_program,
+                token_program,
+                system_program,
+            }.to_account_metas(None),
+            data: crate::instruction::Take {}.data(),
+        };
+
+        let message = Message::new(&[take_ix], Some(&taker_kp.pubkey()));
+        let transaction = Transaction::new(&[&taker_kp], message, program.latest_blockhash());
+        program.send_transaction(transaction).unwrap();
+
+        msg!("Take successful — escrow is now closed");
+
+        // Verify escrow is closed
+        let escrow_after = program.get_account(&escrow);
+        assert!(escrow_after.is_none() || escrow_after.unwrap().lamports == 0);
+
+        // Now call auto_refund — should be a graceful no-op
+        let cranker = Keypair::new();
+        program.airdrop(&cranker.pubkey(), 1 * LAMPORTS_PER_SOL).unwrap();
+
+        let auto_refund_ix = Instruction {
+            program_id: PROGRAM_ID,
+            accounts: crate::accounts::AutoRefund {
+                maker,
+                mint_a,
+                maker_ata_a,
+                escrow,
+                vault,
+                token_program,
+                system_program,
+            }.to_account_metas(None),
+            data: crate::instruction::AutoRefund { seed }.data(),
+        };
+
+        let message = Message::new(&[auto_refund_ix], Some(&cranker.pubkey()));
+        let transaction = Transaction::new(&[&cranker], message, program.latest_blockhash());
+        let result = program.send_transaction(transaction);
+
+        assert!(result.is_ok(), "auto_refund should succeed as no-op when escrow is already closed");
+        msg!("AutoRefund no-op test passed!");
+    }
+
 }

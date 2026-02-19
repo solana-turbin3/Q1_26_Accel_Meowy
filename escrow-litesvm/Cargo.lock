@@ -221,6 +221,7 @@ version = "0.1.0"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
+ "getrandom 0.2.16",
  "litesvm",
  "litesvm-token",
  "solana-account 2.2.1",
@@ -237,6 +238,7 @@ dependencies = [
  "solana-system-interface",
  "solana-transaction 2.2.1",
  "spl-token-2022 8.0.1",
+ "tuktuk-program",
 ]
 
 [[package]]
@@ -6528,6 +6530,14 @@ name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
+
+[[package]]
+name = "tuktuk-program"
+version = "0.3.0"
+source = "git+https://github.com/helium/tuktuk.git?rev=112afe5e80aff8199c3b779203b76b35d97c42d1#112afe5e80aff8199c3b779203b76b35d97c42d1"
+dependencies = [
+ "anchor-lang",
+]
 
 [[package]]
 name = "typenum"

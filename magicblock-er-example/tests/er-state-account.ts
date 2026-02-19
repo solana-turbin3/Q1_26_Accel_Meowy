@@ -65,6 +65,34 @@ describe("er-state-account", () => {
     console.log("\nUser Account State Updated: ", tx);
   });
 
+  // Task 1: VRF on base layer (outside ER)
+  it("Request VRF (base layer)!", async () => {
+    const DEFAULT_QUEUE = new PublicKey(
+      "Cuj97ggrhhidhbu39TijNVqE74xvKJ69gDervRUXAxGh"
+    );
+
+    const tx = await program.methods
+      .requestVrf(0)
+      .accountsPartial({
+        user: anchor.Wallet.local().publicKey,
+        userAccount: userAccount,
+        oracleQueue: DEFAULT_QUEUE,
+      })
+      .rpc({ skipPreflight: true });
+
+    console.log("\nVRF Request (base layer) sent: ", tx);
+
+    // Wait for the oracle callback (~5 seconds on devnet)
+    console.log("Waiting for VRF oracle callback...");
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+
+    const account = await program.account.userAccount.fetch(
+      userAccount,
+      "processed"
+    );
+    console.log("VRF updated data (base layer):", account.data.toString());
+  });
+
   it("Delegate to Ephemeral Rollup!", async () => {
     let tx = await program.methods
       .delegate()
@@ -103,6 +131,42 @@ describe("er-state-account", () => {
     );
 
     console.log("\nUser Account State Updated: ", txHash);
+  });
+
+  // Task 2: VRF inside Ephemeral Rollup
+  it("Request VRF (inside ER)!", async () => {
+    const DEFAULT_EPHEMERAL_QUEUE = new PublicKey(
+      "5hBR571xnXppuCPveTrctfTU7tJLSN94nq7kv7FRK5Tc"
+    );
+
+    let tx = await program.methods
+      .requestVrfEr(0)
+      .accountsPartial({
+        user: providerEphemeralRollup.wallet.publicKey,
+        userAccount: userAccount,
+        oracleQueue: DEFAULT_EPHEMERAL_QUEUE,
+      })
+      .transaction();
+
+    tx.feePayer = providerEphemeralRollup.wallet.publicKey;
+    tx.recentBlockhash = (
+      await providerEphemeralRollup.connection.getLatestBlockhash()
+    ).blockhash;
+    tx = await providerEphemeralRollup.wallet.signTransaction(tx);
+    const txHash = await providerEphemeralRollup.sendAndConfirm(tx, [], {
+      skipPreflight: true,
+    });
+
+    console.log("\nVRF Request (ER) sent: ", txHash);
+
+    // Wait for the oracle callback (~3 seconds in ER)
+    console.log("Waiting for VRF oracle callback (ER)...");
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+
+    const account = await providerEphemeralRollup.connection.getAccountInfo(
+      userAccount
+    );
+    console.log("VRF updated account info (ER):", account);
   });
 
   it("Commit and undelegate from Ephemeral Rollup!", async () => {

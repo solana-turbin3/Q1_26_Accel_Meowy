@@ -29,10 +29,27 @@ pub mod anchor_escrow {
         ctx.accounts.deposit()?;
         ctx.accounts.withdraw_and_close_vault()
     }
+
+    pub fn auto_refund(ctx: Context<AutoRefund>, seed: u64) -> Result<()> {
+        ctx.accounts.auto_refund_and_close_vault(seed, ctx.bumps.escrow)
+    }
+
+    pub fn schedule_refund(
+        ctx: Context<ScheduleRefund>,
+        seed: u64,
+        task_id: u16,
+        expiry_timestamp: i64,
+    ) -> Result<()> {
+        ctx.accounts.schedule_refund(seed, task_id, expiry_timestamp, &ctx.bumps)
+    }
 }
 
 #[error_code]
 pub enum EscrowError {
     #[msg("The escrow time lock has not expired. Take can only happen 5 days after make.")]
     TimeLockNotExpired,
+    #[msg("Escrow maker does not match the provided maker account.")]
+    InvalidMaker,
+    #[msg("Failed to compile auto_refund transaction for TukTuk.")]
+    CompileTransactionFailed,
 }
