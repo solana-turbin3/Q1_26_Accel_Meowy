@@ -8,4 +8,7 @@ This repository contains all the work done in accel program.
 - Assignment 4: MagicBlock VRF (Done ✅) - [magicblock-er-example](./magicblock-er-example)
 - Assignment 5: TukTuk (Done ✅) - [Tuktuk](./Tuktuk) (implemented in [escrow-litesvm](./escrow-litesvm))
 - Assignment 6: Solana GPT with Tuktuk (Done ✅) - [SolanaGPT-Tuktuk](./SolanaGPT-Tuktuk)
-- Assignment 7: Rust (In Progress 🟡) - [Rust-Assignment](./Rust-Assignment)
+- Assignment 7: Rust (Done ✅) - [Rust-Assignment](./Rust-Assignment) (Challenge 1: [generic-storage](./Rust-Assignment/Challenge1/generic-storage))
+- Assignment 8: Group Challenge (Done ✅) - [group-challenge](./group-challenge) ([repo](https://github.com/inspi-writer001/freya))
+- Assignment 9: Pinocchio Escrow (In Progress 🟡) - [accel-pinocchio-escrow](./accel-pinocchio-escrow)
+
